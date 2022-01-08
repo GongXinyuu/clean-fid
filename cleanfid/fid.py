@@ -94,13 +94,13 @@ Compute the inception features for a list of files
 def get_files_features(l_files, model=None, num_workers=12,
                        batch_size=128, device=torch.device("cuda"),
                        mode="clean", custom_fn_resize=None,
-                       description=""):
+                       description="", np_images=None):
     # define the model if it is not specified
     if model is None:
         model = build_feature_extractor(mode, device)
 
     # wrap the images in a dataloader for parallelizing the resize operation
-    dataset = ResizeDataset(l_files, mode=mode)
+    dataset = ResizeDataset(l_files, np_images=np_images, mode=mode)
     if custom_fn_resize is not None:
         dataset.fn_resize = custom_fn_resize
     dataloader = torch.utils.data.DataLoader(dataset,
@@ -145,6 +145,27 @@ def get_folder_features(fdir, model=None, num_workers=12, num=None,
 
 
 """
+Compute the inception features for a list of image files
+"""
+def get_file_features(np_images: list, model=None, num_workers=12, num=None,
+                        shuffle=False, seed=0, batch_size=128, device=torch.device("cuda"),
+                        mode="clean", custom_fn_resize=None, description=""):
+
+    # use a subset number of files if needed
+    if num is not None:
+        if shuffle:
+            random.seed(seed)
+            random.shuffle(np_images)
+        np_images = np_images[:num]
+    np_feats = get_files_features(None, model, num_workers=num_workers,
+                                  batch_size=batch_size, device=device,
+                                  mode=mode,
+                                  custom_fn_resize=custom_fn_resize,
+                                  description=description, np_images=np_images)
+    return np_feats
+
+
+"""
 Compute the FID score given the inception features stack
 """
 def fid_from_feats(feats1, feats2):
@@ -171,6 +192,28 @@ def fid_folder(fdir, dataset_name, dataset_res, dataset_split,
     np_feats = get_folder_features(fdir, model, num_workers=num_workers,
                                     batch_size=batch_size, device=device,
                                     mode=mode, description=f"FID {fbname} : ")
+    mu = np.mean(np_feats, axis=0)
+    sigma = np.cov(np_feats, rowvar=False)
+    fid = frechet_distance(mu, sigma, ref_mu, ref_sigma)
+    return fid
+
+
+"""
+Computes the FID score for a loaded list of numpy images for a specific dataset
+and a specific resolution
+"""
+def fid_files(np_images: list, dataset_name, dataset_res, dataset_split,
+               model=None, mode="clean", num_workers=12,
+               batch_size=128, device=torch.device("cuda")):
+    # define the model if it is not specified
+    if model is None:
+        model = build_feature_extractor(mode, device)
+    # Load reference FID statistics (download if needed)
+    ref_mu, ref_sigma = get_reference_statistics(dataset_name, dataset_res,
+                                    mode=mode, seed=0, split=dataset_split)
+    np_feats = get_file_features(np_images, model, num_workers=num_workers,
+                                    batch_size=batch_size, device=device,
+                                    mode=mode)
     mu = np.mean(np_feats, axis=0)
     sigma = np.cov(np_feats, rowvar=False)
     fid = frechet_distance(mu, sigma, ref_mu, ref_sigma)
@@ -380,7 +423,7 @@ def compute_kid(fdir1=None, fdir2=None, gen=None,
         raise ValueError("invalid combination of directories and models entered")
 
 
-def compute_fid(fdir1=None, fdir2=None, gen=None,
+def compute_fid(fdir1=None, fdir2=None, gen=None, np_images=None,
             mode="clean", num_workers=12, batch_size=32,
             device=torch.device("cuda"), dataset_name="FFHQ",
             dataset_res=1024, dataset_split="train", num_gen=50_000, z_dim=512,
@@ -414,6 +457,13 @@ def compute_fid(fdir1=None, fdir2=None, gen=None,
                 model=feat_model, z_dim=z_dim, num_gen=num_gen,
                 mode=mode, num_workers=num_workers, batch_size=batch_size,
                 device=device)
+        return score
+
+    elif np_images is not None:
+        print(f"compute FID of a list of files with {dataset_name} statistics")
+        score = fid_files(np_images, dataset_name, dataset_res, dataset_split,
+            model=feat_model, mode=mode, num_workers=num_workers,
+            batch_size=batch_size, device=device)
         return score
 
     else:
