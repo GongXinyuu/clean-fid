@@ -120,27 +120,31 @@ Compute the inception features for a folder of image files
 """
 def get_folder_features(fdir, model=None, num_workers=12, num=None,
                         shuffle=False, seed=0, batch_size=128, device=torch.device("cuda"),
-                        mode="clean", custom_fn_resize=None, description=""):
+                        mode="clean", custom_fn_resize=None, description="", np_images=None):
     # get all relevant files in the dataset
-    if ".zip" in fdir:
-        files = list(set(zipfile.ZipFile(fdir).namelist()))
-        # remove the non-image files inside the zip
-        files = [x for x in files if os.path.splitext(x)[1].lower()[1:] in EXTENSIONS]
+    if fdir is not None:
+        if ".zip" in fdir:
+            files = list(set(zipfile.ZipFile(fdir).namelist()))
+            # remove the non-image files inside the zip
+            files = [x for x in files if os.path.splitext(x)[1].lower()[1:] in EXTENSIONS]
+        else:
+            files = sorted([file for ext in EXTENSIONS
+                        for file in glob(os.path.join(fdir, f"**/*.{ext}"), recursive=True)])
+        print(f"Found {len(files)} images in the folder {fdir}")
+        # use a subset number of files if needed
+        if num is not None:
+            if shuffle:
+                random.seed(seed)
+                random.shuffle(files)
+            files = files[:num]
     else:
-        files = sorted([file for ext in EXTENSIONS
-                    for file in glob(os.path.join(fdir, f"**/*.{ext}"), recursive=True)])
-    print(f"Found {len(files)} images in the folder {fdir}")
-    # use a subset number of files if needed
-    if num is not None:
-        if shuffle:
-            random.seed(seed)
-            random.shuffle(files)
-        files = files[:num]
+        files = None
+        assert np_images is not None
     np_feats = get_files_features(files, model, num_workers=num_workers,
                                   batch_size=batch_size, device=device,
                                   mode=mode,
                                   custom_fn_resize=custom_fn_resize,
-                                  description=description)
+                                  description=description, np_images=np_images)
     return np_feats
 
 
@@ -339,7 +343,7 @@ def remove_custom_stats(name, mode="clean"):
 Cache a custom dataset statistics file
 """
 def make_custom_stats(name, fdir, num=None, mode="clean",
-                    num_workers=0, batch_size=64, device=torch.device("cuda")):
+                    num_workers=0, batch_size=64, device=torch.device("cuda"), np_images=None):
     stats_folder = os.path.join(os.path.dirname(cleanfid.__file__), "stats")
     os.makedirs(stats_folder, exist_ok=True)
     split, res = "custom", "na"
@@ -352,11 +356,14 @@ def make_custom_stats(name, fdir, num=None, mode="clean",
         raise Exception(msg)
 
     feat_model = build_feature_extractor(mode, device)
-    fbname = os.path.basename(fdir)
+    if fdir is not None:
+        fbname = os.path.basename(fdir)
+    else:
+        fbname = "None"
     # get all inception features for folder images
     np_feats = get_folder_features(fdir, feat_model, num_workers=num_workers, num=num,
                                     batch_size=batch_size, device=device,
-                                    mode=mode, description=f"custom stats: {fbname} : ")
+                                    mode=mode, description=f"custom stats: {fbname} : ", np_images=np_images)
     mu = np.mean(np_feats, axis=0)
     sigma = np.cov(np_feats, rowvar=False)
     print(f"saving custom FID stats to {outf}")
