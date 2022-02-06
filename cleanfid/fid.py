@@ -446,16 +446,12 @@ def compute_fid(fdir1=None, fdir2=None, gen=None, np_images=None,
         score = compare_folders(fdir1, fdir2, feat_model,
             mode=mode, batch_size=batch_size,
             num_workers=num_workers, device=device)
-        return score
-
     # compute fid of a folder
     elif fdir1 is not None and fdir2 is None:
         print(f"compute FID of a folder with {dataset_name} statistics")
         score = fid_folder(fdir1, dataset_name, dataset_res, dataset_split,
             model=feat_model, mode=mode, num_workers=num_workers,
             batch_size=batch_size, device=device)
-        return score
-
     # compute fid for a generator
     elif gen is not None:
         print(f"compute FID of a model with {dataset_name}-{dataset_res} statistics")
@@ -463,14 +459,12 @@ def compute_fid(fdir1=None, fdir2=None, gen=None, np_images=None,
                 model=feat_model, z_dim=z_dim, num_gen=num_gen,
                 mode=mode, num_workers=num_workers, batch_size=batch_size,
                 device=device)
-        return score
-
     elif np_images is not None:
         print(f"compute FID of a list of files with {dataset_name} statistics")
         score = fid_files(np_images, dataset_name, dataset_res, dataset_split,
             model=feat_model, mode=mode, num_workers=num_workers,
             batch_size=batch_size, device=device)
-        return score
-
     else:
         raise ValueError("invalid combination of directories and models entered")
+    del feat_model
+    return score
